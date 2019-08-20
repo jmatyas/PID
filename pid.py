@@ -14,32 +14,8 @@ def get_value(mess):
 
 class PID_controller(EnvExperiment):
 
-    # values - all 8 channels of ADC are checked at the same time, therefore
-    #       8 slots for quantized VALUES
-    # prop_out - output value of proportinal part of controller
-    # derivative_out - output value of derivative part of contreoller
-    # integral_in - value of previos measurments and calculations of integral part
-    # integrated_out - output value of integral part of controller
-    values = [0.0 for i in range (8)]
-    prop_out = 0.0
-    derivative_out = 0.0
-    integral_in = 0.0
-    integrated_out = 0.0
-
-    # Kp - proportional coefficient
-    # Kd - derivative coefficient
-    # Ki - integral coefficient
-    Kp = 0.0
-    Kd = 0.0
-    Ki = 0.0
-
     # DAC channel number used in the experiment
     DAC_channel = 1
-
-    last_error = 0.0
-    err_coeff = 0.0
-
-    sum = 0.0
 
     def build(self):
         # requesting for devices:
@@ -55,8 +31,34 @@ class PID_controller(EnvExperiment):
 
     @kernel
     def run(self):
-        #  resetting and setting devices
+        # values - all 8 channels of ADC are checked at the same time, therefore
+        #       8 slots for quantized VALUES
+        # prop_out - output value of proportinal part of controller
+        # derivative_out - output value of derivative part of contreoller
+        # integral_in - value of previos measurments and calculations of integral part
+        # integrated_out - output value of integral part of controller
+        values = [0.0 for i in range (8)]
+        prop_out = 0.0
+        derivative_out = 0.0
+        integral_in = 0.0
+        integrated_out = 0.0
 
+        # Kp - proportional coefficient
+        # Kd - derivative coefficient
+        # Ki - integral coefficient
+        Kp = 0.0
+        Kd = 0.0
+        Ki = 0.0
+
+        # initial values of error coefficient and previous error
+        last_error = 0.0
+        err_coeff = 0.0
+
+        # initial value of output sum from PID conrolle
+        sum = 0.0
+
+
+        #  resetting and setting devices
         self.core.reset()
         self.setup_sampler(0)
         self.setup_zotino()
@@ -65,20 +67,20 @@ class PID_controller(EnvExperiment):
 
         # while loop in which all the control is done
         while True:
-            self.sample(self.values)
-            if self.values[0] > 0.5 :
-                self.err_coeff = 1.0
+            self.sample(values)             # sampling values from the PFD
+            if values[0] > 0.5 :            # saturating controller - if PFD gives voltage level
+                err_coeff = 1.0
             else:
-                self.err_coeff = -1.0
+                err_coeff = -1.0
 
-            self.proportional_multiply(self.err_coeff, self.Kp, self.prop_out)
-            self.integral_part(self.err_coeff, self.Ki, self.integral_in, self.integrated_out )
-            self.derivative_part(self.err_coeff, self.last_error, self.Kd, self.derivative_out)
+            prop_out = self.proportional_multiply (err_coeff, Kp)
+            integral_in, integrated_out = self.integral_part (err_coeff, integral_in, Ki)
+            last_error, derivative_out = self.derivative_part (err_coeff, last_error, Kd)
 
-            sum = self.prop_out + self.derivative_out + self.integrated_out
+            sum = prop_out + derivative_out + integrated_out
 
-            # self.core.break_realtime()
-            self.write_output(self.DAC_channel, self.sum)
+            self.core.break_realtime()
+            self.write_output(self.DAC_channel, sum)
 
 
     @kernel
@@ -108,23 +110,25 @@ class PID_controller(EnvExperiment):
         self.zotino0.load()
 
     @kernel
-    def proportional_multiply (self, error, Kp, proportional_output):
-        proportional_output = error * Kp
+    def proportional_multiply (self, error, Kp):
+        return error * Kp
 
     @kernel
-    def integral_part (self, error, Ki, integral_in, integrated_out):
+    def integral_part (self, error, integral_in, Ki):
         temp = integral_in + error
         integrated_out = Ki*temp
         integral_in = temp
+        return integral_in, integrated_out
 
     @kernel
-    def derivative_part (self, error, last_error, Kd, derivative_out):
+    def derivative_part (self, error, last_error, Kd):
         derivative = error - last_error
         last_error = error
         derivative_out = Kd*derivative
+        return last_error, derivative_out
 
     def get_PID_coeffs(self):
-        self.Kp = get_value ("Specif Kp:\n")
+        self.Kp = get_value ("Specify Kp:\n")
         print(self.Kp)
         self.Ki = get_value ("Specify Ki:\n")
         print(self.Ki)
