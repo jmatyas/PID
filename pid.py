@@ -1,6 +1,5 @@
 from artiq.experiment import *
 
-
 def get_value(mess):
     while True:
         try:
@@ -14,8 +13,15 @@ def get_value(mess):
 
 class PID_controller(EnvExperiment):
 
+    # Kp - proportional coefficient
+    # Kd - derivative coefficient
+    # Ki - integral coefficient
+    Kp = 0.0
+    Kd = 0.0
+    Ki = 0.0
+
     # DAC channel number used in the experiment
-    DAC_channel = 1
+    DAC_channel = 0
 
     def build(self):
         # requesting for devices:
@@ -28,6 +34,10 @@ class PID_controller(EnvExperiment):
         self.setattr_device ("core")
         self.setattr_device ("sampler0")
         self.setattr_device ("zotino0")
+
+    def prepare(self):
+        self.get_PID_coeffs()
+
 
     @kernel
     def run(self):
@@ -43,12 +53,6 @@ class PID_controller(EnvExperiment):
         integral_in = 0.0
         integrated_out = 0.0
 
-        # Kp - proportional coefficient
-        # Kd - derivative coefficient
-        # Ki - integral coefficient
-        Kp = 0.0
-        Kd = 0.0
-        Ki = 0.0
 
         # initial values of error coefficient and previous error
         last_error = 0.0
@@ -57,36 +61,33 @@ class PID_controller(EnvExperiment):
         # initial value of output sum from PID conrolle
         sum = 0.0
 
-
         #  resetting and setting devices
         self.core.reset()
         self.setup_sampler(0)
         self.setup_zotino()
-        self.get_PID_coeffs()
         self.core.break_realtime() # moving time coursor into the future
-
         # while loop in which all the control is done
+        # for i in range (10):
         while True:
             self.sample(values)             # sampling values from the PFD
-            if values[0] > 0.5 :            # saturating controller - if PFD gives voltage level
-                err_coeff = 1.0
-            else:
-                err_coeff = -1.0
+            delay(300*us)
+            # if values[0] > 0.5 :            # saturating controller - if PFD gives voltage level
+            #     err_coeff = 1.0
+            # else:
+            #     err_coeff = -1.0
+            # sampled[i] = values[0]
+            prop_out = self.proportional_multiply (values[0], self.Kp)
+            # integral_in, integrated_out = self.integral_part (err_coeff, integral_in, Ki)
+            # last_error, derivative_out = self.derivative_part (err_coeff, last_error, Kd)
 
-            prop_out = self.proportional_multiply (err_coeff, Kp)
-            integral_in, integrated_out = self.integral_part (err_coeff, integral_in, Ki)
-            last_error, derivative_out = self.derivative_part (err_coeff, last_error, Kd)
-
-            sum = prop_out + derivative_out + integrated_out
-
-            self.core.break_realtime()
+            sum = prop_out #+ derivative_out + integrated_out
             self.write_output(self.DAC_channel, sum)
-
 
     @kernel
     def setup_sampler(self, gain):
         # initializing sampler - setting each channel's gain to GAIN
         self.sampler0.init()
+        delay(5*ms)
         for i in range(8):
             self.sampler0.set_gain_mu(i, gain)
             delay(100*us) # delay is needed (for some reason)
@@ -98,20 +99,26 @@ class PID_controller(EnvExperiment):
     @kernel
     def setup_zotino (self):
         self.zotino0.init()
+        delay(200*us)
 
     @kernel
     def write_output (self, channel, value):
-        if value > 10:
-            value = 10.0
-        elif value < -10:
+
+        self.core.break_realtime()
+
+        if value >= 10:
+            value = 9.99
+        elif value <= -10:
             value = -10.0
 
         self.zotino0.write_dac(channel, value)
         self.zotino0.load()
+        # delay(100*us)
 
     @kernel
     def proportional_multiply (self, error, Kp):
-        return error * Kp
+        temp = error * Kp
+        return temp
 
     @kernel
     def integral_part (self, error, integral_in, Ki):
@@ -130,7 +137,7 @@ class PID_controller(EnvExperiment):
     def get_PID_coeffs(self):
         self.Kp = get_value ("Specify Kp:\n")
         print(self.Kp)
-        self.Ki = get_value ("Specify Ki:\n")
-        print(self.Ki)
-        self.Kd = get_value ("Specify Kd:\n")
-        print(self.Kd)
+        # self.Ki = get_value ("Specify Ki:\n")
+        # print(self.Ki)
+        # self.Kd = get_value ("Specify Kd:\n")
+        # print(self.Kd)
