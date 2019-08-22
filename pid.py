@@ -38,7 +38,6 @@ class PID_controller(EnvExperiment):
     def prepare(self):
         self.get_PID_coeffs()
 
-
     @kernel
     def run(self):
         # values - all 8 channels of ADC are checked at the same time, therefore
@@ -56,7 +55,6 @@ class PID_controller(EnvExperiment):
 
         # initial values of error coefficient and previous error
         last_error = 0.0
-        err_coeff = 0.0
 
         # initial value of output sum from PID conrolle
         sum = 0.0
@@ -70,16 +68,11 @@ class PID_controller(EnvExperiment):
         while True:
             self.sample(values)             # sampling values from the PFD
             delay(300*us)
-            # if values[0] > 0.5 :            # saturating controller - if PFD gives voltage level
-            #     err_coeff = 1.0
-            # else:
-            #     err_coeff = -1.0
-            # sampled[i] = values[0]
             prop_out = self.proportional_multiply (values[0], self.Kp)
             integral_in, integrated_out = self.integral_part (values[0], integral_in, self.Ki)
-            # last_error, derivative_out = self.derivative_part (err_coeff, last_error, Kd)
+            last_error, derivative_out = self.derivative_part (values[0], last_error, self.Kd)
 
-            sum = prop_out +integrated_out#+ derivative_out
+            sum = prop_out + integrated_out + derivative_out
             self.write_output(self.DAC_channel, sum)
 
     @kernel
@@ -142,5 +135,5 @@ class PID_controller(EnvExperiment):
         print("Kp = {}".format(self.Kp))
         self.Ki = get_value ("Specify Ki:\n")
         print("Ki = {}".format(self.Ki))
-        # self.Kd = get_value ("Specify Kd:\n")
-        # print(self.Kd)
+        self.Kd = get_value ("Specify Kd:\n")
+        print("Kd = {}".format(self.Kd))
