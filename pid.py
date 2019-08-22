@@ -56,7 +56,7 @@ class PID_controller(EnvExperiment):
 
         # initial values of error coefficient and previous error
         last_error = 0.0
-        err_coeff = 0.0
+        # err_coeff = 0.0
 
         # initial value of output sum from PID conrolle
         sum = 0.0
@@ -69,7 +69,7 @@ class PID_controller(EnvExperiment):
         # while loop in which all the control is done\
         while True:
             self.sample(values)             # sampling values from the PFD
-            delay(300*us)
+            # delay(100*us)
             # if values[0] > 0.5 :            # saturating controller - if PFD gives voltage level
             #     err_coeff = 1.0
             # else:
@@ -77,10 +77,10 @@ class PID_controller(EnvExperiment):
             # sampled[i] = values[0]
             prop_out = self.proportional_multiply (values[0], self.Kp)
             integral_in, integrated_out = self.integral_part (values[0], integral_in, self.Ki)
-            # last_error, derivative_out = self.derivative_part (err_coeff, last_error, Kd)
+            last_error, derivative_out = self.derivative_part (values[0], last_error, self.Kd)
 
-            sum = prop_out +integrated_out#+ derivative_out
-            self.write_output(self.DAC_channel, sum)
+            sum = prop_out + integrated_out + derivative_out
+            self.write_output(self.DAC_channel, values[0])
 
     @kernel
     def setup_sampler(self, gain):
@@ -114,12 +114,12 @@ class PID_controller(EnvExperiment):
         self.zotino0.load()
         # delay(100*us)
 
-    @kernel
+    @kernel (flags={"fast-math"})
     def proportional_multiply (self, error, Kp):
         temp = error * Kp
         return temp
 
-    @kernel
+    @kernel (flags={"fast-math"})
     def integral_part (self, error, integral_in, Ki):
         temp = integral_in + error
         integrated_out = temp*Ki
@@ -130,7 +130,7 @@ class PID_controller(EnvExperiment):
         integral_in = temp
         return integral_in, integrated_out
 
-    @kernel
+    @kernel (flags={"fast-math"})
     def derivative_part (self, error, last_error, Kd):
         derivative = error - last_error
         last_error = error
@@ -142,5 +142,5 @@ class PID_controller(EnvExperiment):
         print("Kp = {}".format(self.Kp))
         self.Ki = get_value ("Specify Ki:\n")
         print("Ki = {}".format(self.Ki))
-        # self.Kd = get_value ("Specify Kd:\n")
-        # print(self.Kd)
+        self.Kd = get_value ("Specify Kd:\n")
+        print("Kd = {}".format(self.Kd))
