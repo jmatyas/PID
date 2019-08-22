@@ -66,8 +66,7 @@ class PID_controller(EnvExperiment):
         self.setup_sampler(0)
         self.setup_zotino()
         self.core.break_realtime() # moving time coursor into the future
-        # while loop in which all the control is done
-        # for i in range (10):
+        # while loop in which all the control is done\
         while True:
             self.sample(values)             # sampling values from the PFD
             delay(300*us)
@@ -77,10 +76,10 @@ class PID_controller(EnvExperiment):
             #     err_coeff = -1.0
             # sampled[i] = values[0]
             prop_out = self.proportional_multiply (values[0], self.Kp)
-            # integral_in, integrated_out = self.integral_part (err_coeff, integral_in, Ki)
+            integral_in, integrated_out = self.integral_part (values[0], integral_in, self.Ki)
             # last_error, derivative_out = self.derivative_part (err_coeff, last_error, Kd)
 
-            sum = prop_out #+ derivative_out + integrated_out
+            sum = prop_out +integrated_out#+ derivative_out
             self.write_output(self.DAC_channel, sum)
 
     @kernel
@@ -123,7 +122,11 @@ class PID_controller(EnvExperiment):
     @kernel
     def integral_part (self, error, integral_in, Ki):
         temp = integral_in + error
-        integrated_out = Ki*temp
+        integrated_out = temp*Ki
+        if integrated_out >= 10:
+            temp = temp - error
+        elif integrated_out <= -10:
+            temp = temp - error
         integral_in = temp
         return integral_in, integrated_out
 
@@ -136,8 +139,8 @@ class PID_controller(EnvExperiment):
 
     def get_PID_coeffs(self):
         self.Kp = get_value ("Specify Kp:\n")
-        print(self.Kp)
-        # self.Ki = get_value ("Specify Ki:\n")
-        # print(self.Ki)
+        print("Kp = {}".format(self.Kp))
+        self.Ki = get_value ("Specify Ki:\n")
+        print("Ki = {}".format(self.Ki))
         # self.Kd = get_value ("Specify Kd:\n")
         # print(self.Kd)
