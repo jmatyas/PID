@@ -135,7 +135,7 @@ class PID_controller(EnvExperiment):
         self.zotino0.load()
         # delay(100*us)
 
-    @kernel
+    @kernel (flags={"fast-math"})
     def proportional_multiply (self, error, Kp):
 
         # calculating proportional part of PID based on given values
@@ -143,7 +143,7 @@ class PID_controller(EnvExperiment):
         temp = error * Kp
         return temp
 
-    @kernel
+    @kernel (flags={"fast-math"})
     def integral_part (self, error, integral_in, Ki):
 
         # calculating integral part of PID based on given values
@@ -160,7 +160,7 @@ class PID_controller(EnvExperiment):
         integral_in = temp
         return integral_in, integrated_out
 
-    @kernel
+    @kernel (flags={"fast-math"})
     def derivative_part (self, error, last_error, Kd):
 
         # calculating derivative part of PID based on given values
