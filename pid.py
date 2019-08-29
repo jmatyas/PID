@@ -1,8 +1,10 @@
 from artiq.experiment import *
+from artiq.coredevice.sampler import adc_mu_to_volt 
+from artiq.coredevice.spline import Spline
 
 def get_value(mess):
 
-    # function that gets floating point values from the user via terminal;
+    # function that gets floating point voltages from the user via terminal;
     # it returns that value
     #       mess - message that will be displayed in the console
 
@@ -32,7 +34,7 @@ class PID_controller(EnvExperiment):
 
         # requesting for devices:
         # core
-        # sampler0 - to sample values of input (in the end it would be
+        # sampler0 - to sample voltages of input (in the end it would be
         #       the output of Phase Detector)
         # zotino0 - to provide (in the end) appropriate output for controlling
         #       LASER/VCO
@@ -43,23 +45,27 @@ class PID_controller(EnvExperiment):
 
     def prepare(self):
         self.get_PID_coeffs()
+        a =Spline.to_mu(self,value = 2)
+
+        # print(Spline.to_mu(value = self.Kp))
 
     @kernel
     def run(self):
 
-        # values - all 8 channels of ADC are checked at the same time, therefore
-        #       8 slots for quantized VALUES
+        # voltages - all 8 channels of ADC are checked at the same time, therefore
+        #       8 slots for quantized voltages
         # prop_out - output value of proportinal part of controller
         # derivative_out - output value of derivative part of contreoller
         # integral_in - value of previos measurments and calculations of integral part
         # integrated_out - output value of integral part of controller
-        values = [0.0 for i in range (8)]
+        voltages = 0.0
+        values = [0 for i in range (8)]
         prop_out = 0.0
         derivative_out = 0.0
         integral_in = 0.0
         integrated_out = 0.0
 
-        # initial values of error coefficient and previous error
+        # initial voltages of error coefficient and previous error
         last_error = 0.0
 
         # initial value of output sum from PID conrolle
@@ -71,12 +77,13 @@ class PID_controller(EnvExperiment):
 
         # while loop in which all the control is done
         while True:
-            self.sample(values)     # sampling values from the PFD
-            delay(300*us)           # delay is needed for sampler to perform its job
-
-            prop_out = self.proportional_multiply (values[0], self.Kp)
-            integral_in, integrated_out = self.integral_part (values[0], integral_in, self.Ki)
-            last_error, derivative_out = self.derivative_part (values[0], last_error, self.Kd)
+            self.sample(values)     # sampling voltages from the PFD
+            delay(200*us)           # delay is needed for sampler to perform its job
+            voltages = adc_mu_to_volt(values[0])
+            with parallel:
+                prop_out = self.proportional_multiply (voltages, self.Kp)
+                # integral_in, integrated_out = self.integral_part (voltages[0], integral_in, self.Ki)
+                # last_error, derivative_out = self.derivative_part (voltages[0], last_error, self.Kd)
 
             sum = prop_out + integrated_out + derivative_out
             self.write_output(self.DAC_channel, sum)
@@ -87,7 +94,7 @@ class PID_controller(EnvExperiment):
         #  resetting and setting devices
 
         self.core.reset()
-        self.setup_sampler(0)
+        self.setup_sampler(1)
         self.setup_zotino()
 
     @kernel
@@ -106,8 +113,8 @@ class PID_controller(EnvExperiment):
     @kernel
     def sample(self, values):
 
-        # sampling values from Sampler and assigning them to 'values'
-        self.sampler0.sample(values)
+        # sampling voltages from Sampler and assigning them to 'voltages'
+        self.sampler0.sample_mu(values)
 
     @kernel
     def setup_zotino (self):
@@ -117,7 +124,7 @@ class PID_controller(EnvExperiment):
     @kernel
     def write_output (self, channel, value):
 
-        # function that allows to output given values to DAC
+        # function that allows to output given voltages to DAC
         # in normal operating conditions there should be some delay between
         # different each output, but here sampling and performing floating point
         # calculations in 'run' function gives sufficient time of delay (at least)
@@ -138,7 +145,7 @@ class PID_controller(EnvExperiment):
     @kernel (flags={"fast-math"})
     def proportional_multiply (self, error, Kp):
 
-        # calculating proportional part of PID based on given values
+        # calculating proportional part of PID based on given voltages
 
         temp = error * Kp
         return temp
@@ -146,9 +153,9 @@ class PID_controller(EnvExperiment):
     @kernel (flags={"fast-math"})
     def integral_part (self, error, integral_in, Ki):
 
-        # calculating integral part of PID based on given values
+        # calculating integral part of PID based on given voltages
 
-        # anti-windup of integration - in case the PID wanted to output higher values
+        # anti-windup of integration - in case the PID wanted to output higher voltages
         # than DAC is capable of
         temp = integral_in + error
         integrated_out = temp*Ki
@@ -163,7 +170,7 @@ class PID_controller(EnvExperiment):
     @kernel (flags={"fast-math"})
     def derivative_part (self, error, last_error, Kd):
 
-        # calculating derivative part of PID based on given values
+        # calculating derivative part of PID based on given voltages
 
         derivative = error - last_error
         last_error = error
