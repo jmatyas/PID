@@ -1,4 +1,5 @@
 from artiq.experiment import *
+from artiq.coredevice.ad53xx import voltage_to_mu
 import numpy as np
 
 def get_value(mess):
@@ -27,7 +28,7 @@ class PID_controller(EnvExperiment):
     Ki = 0.0
     times = np.arange(6, dtype = np.int64)
     times2 = np.arange(6, dtype = np.int64)
-    a = 0.0
+    a = np.int64()
 
     # DAC channel number used in the experiment
     DAC_channel = 0
@@ -58,7 +59,8 @@ class PID_controller(EnvExperiment):
         # integral_in - value of previos measurments and calculations of integral part
         # integrated_out - output value of integral part of controller
         voltages = 0.0
-        values = [0.0 for i in range (8)]
+        values = [0 for i in range (8)]
+        error_sig = 0.0
         prop_out = 0.0
         derivative_out = 0.0
         integral_in = 0.0
@@ -75,39 +77,28 @@ class PID_controller(EnvExperiment):
 
         
         # while loop in which all the control is done
-        # while True:
-        self.times[0] = now_mu()
-        self.times2[0] = self.core.get_rtio_counter_mu()
-        self.sample(values)     # sampling voltages from the PFD
-        self.times[1] = now_mu()
-        self.times2[1] = self.core.get_rtio_counter_mu()
-        delay(400*us)           # delay is needed for sampler to perform its job
-        self.times[2] = now_mu()
-        self.times2[2] = self.core.get_rtio_counter_mu()
-        with parallel:
-            prop_out = self.proportional_multiply (values[0], self.Kp)
-            integral_in, integrated_out = self.integral_part (values[0], integral_in, self.Ki)
-            last_error, derivative_out = self.derivative_part (values[0], last_error, self.Kd)
-        self.times[3] = now_mu()
-        self.times2[3] = self.core.get_rtio_counter_mu()
-        sum = prop_out + integrated_out + derivative_out
-        self.times[4] = now_mu()
-        self.times2[4] = self.core.get_rtio_counter_mu()
-        self.write_output(self.DAC_channel, sum)
-        self.times[5] = now_mu()
-        self.times2[5] = self.core.get_rtio_counter_mu()
+        while True:
+            self.sample(values)     # sampling voltages from the PFD - it needs more or less 230 us
+            error_sig = float(values[0])
+            delay(200*us)           # delay is needed for sampler to perform its job
+            with parallel:
+                prop_out = self.proportional_multiply (error_sig, self.Kp)
+                integral_in, integrated_out = self.integral_part (error_sig, integral_in, self.Ki)
+                last_error, derivative_out = self.derivative_part (error_sig, last_error, self.Kd)
+            # calculations above take approximately 40 us
+            sum = prop_out + integrated_out + derivative_out    # it takes around 0.5 us
+            self.write_output(self.DAC_channel, int(sum)+32768)
 
-    def analyze(self):
-        dtimes = list()
-        dtimes2 = list()
-        for t in range(5):
-            dtimes.append(self.core.mu_to_seconds(self.times[t+1]-self.times[t]))
+
+    # def analyze(self):
+    #     print(voltage_to_mu(9.99))
+    #     print(voltage_to_mu(-10.))
+    #     dtimes2 = list()
         
-        for t in range(5):
-            dtimes2.append(self.core.mu_to_seconds(self.times2[t+1]-self.times2[t]))
+    #     for t in range(len(self.times)-1):
+    #         dtimes2.append(self.core.mu_to_seconds(self.times2[t+1]-self.times2[t]))
 
-        print(dtimes)
-        print(dtimes2)
+    #     print(dtimes2)
 
     @kernel
     def initialize_devs(self):
@@ -115,7 +106,7 @@ class PID_controller(EnvExperiment):
         #  resetting and setting devices
 
         self.core.reset()
-        self.setup_sampler(1)
+        self.setup_sampler(0)
         self.setup_zotino()
 
     @kernel
@@ -135,7 +126,7 @@ class PID_controller(EnvExperiment):
     def sample(self, values):
 
         # sampling voltages from Sampler and assigning them to 'voltages'
-        self.sampler0.sample(values)
+        self.sampler0.sample_mu(values)
 
     @kernel
     def setup_zotino (self):
@@ -153,13 +144,13 @@ class PID_controller(EnvExperiment):
         # uncomment delay in the last line
 
         # saturation of output
-        if value >= 10:
-            value = 9.99
-        elif value <= -10:
-            value = -10.0
+        if value >= voltage_to_mu(9.99):
+            value = voltage_to_mu(9.99)
+        elif value <= voltage_to_mu(-10.):
+            value = voltage_to_mu(-10.)
 
         # feeds given 'value' to the given channel and outputs it
-        self.zotino0.write_dac(channel, value)
+        self.zotino0.write_dac_mu(channel, value)
         self.zotino0.load()
         # delay(100*us)
 
@@ -180,9 +171,9 @@ class PID_controller(EnvExperiment):
         # than DAC is capable of
         temp = integral_in + error
         integrated_out = temp*Ki
-        if integrated_out >= 10:
+        if integrated_out >= voltage_to_mu(9.99)- 32768.0:
             temp = temp - error
-        elif integrated_out <= -10:
+        elif integrated_out <= voltage_to_mu(-10.) - 32768.0:
             temp = temp - error
 
         integral_in = temp
