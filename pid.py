@@ -1,6 +1,5 @@
 from artiq.experiment import *
-from artiq.coredevice.sampler import adc_mu_to_volt 
-from artiq.coredevice.spline import Spline
+import numpy as np
 
 def get_value(mess):
 
@@ -26,6 +25,9 @@ class PID_controller(EnvExperiment):
     Kp = 0.0
     Kd = 0.0
     Ki = 0.0
+    times = np.arange(6, dtype = np.int64)
+    times2 = np.arange(6, dtype = np.int64)
+    a = 0.0
 
     # DAC channel number used in the experiment
     DAC_channel = 0
@@ -45,9 +47,6 @@ class PID_controller(EnvExperiment):
 
     def prepare(self):
         self.get_PID_coeffs()
-        a =Spline.to_mu(self,value = 2)
-
-        # print(Spline.to_mu(value = self.Kp))
 
     @kernel
     def run(self):
@@ -59,12 +58,12 @@ class PID_controller(EnvExperiment):
         # integral_in - value of previos measurments and calculations of integral part
         # integrated_out - output value of integral part of controller
         voltages = 0.0
-        values = [0 for i in range (8)]
+        values = [0.0 for i in range (8)]
         prop_out = 0.0
         derivative_out = 0.0
         integral_in = 0.0
         integrated_out = 0.0
-
+        
         # initial voltages of error coefficient and previous error
         last_error = 0.0
 
@@ -74,19 +73,41 @@ class PID_controller(EnvExperiment):
         self.initialize_devs()      # initializing devices used in the experiment
         self.core.break_realtime()  # moving time coursor into the future
 
-
+        
         # while loop in which all the control is done
-        while True:
-            self.sample(values)     # sampling voltages from the PFD
-            delay(200*us)           # delay is needed for sampler to perform its job
-            voltages = adc_mu_to_volt(values[0])
-            with parallel:
-                prop_out = self.proportional_multiply (voltages, self.Kp)
-                # integral_in, integrated_out = self.integral_part (voltages[0], integral_in, self.Ki)
-                # last_error, derivative_out = self.derivative_part (voltages[0], last_error, self.Kd)
+        # while True:
+        self.times[0] = now_mu()
+        self.times2[0] = self.core.get_rtio_counter_mu()
+        self.sample(values)     # sampling voltages from the PFD
+        self.times[1] = now_mu()
+        self.times2[1] = self.core.get_rtio_counter_mu()
+        delay(400*us)           # delay is needed for sampler to perform its job
+        self.times[2] = now_mu()
+        self.times2[2] = self.core.get_rtio_counter_mu()
+        with parallel:
+            prop_out = self.proportional_multiply (values[0], self.Kp)
+            integral_in, integrated_out = self.integral_part (values[0], integral_in, self.Ki)
+            last_error, derivative_out = self.derivative_part (values[0], last_error, self.Kd)
+        self.times[3] = now_mu()
+        self.times2[3] = self.core.get_rtio_counter_mu()
+        sum = prop_out + integrated_out + derivative_out
+        self.times[4] = now_mu()
+        self.times2[4] = self.core.get_rtio_counter_mu()
+        self.write_output(self.DAC_channel, sum)
+        self.times[5] = now_mu()
+        self.times2[5] = self.core.get_rtio_counter_mu()
 
-            sum = prop_out + integrated_out + derivative_out
-            self.write_output(self.DAC_channel, sum)
+    def analyze(self):
+        dtimes = list()
+        dtimes2 = list()
+        for t in range(5):
+            dtimes.append(self.core.mu_to_seconds(self.times[t+1]-self.times[t]))
+        
+        for t in range(5):
+            dtimes2.append(self.core.mu_to_seconds(self.times2[t+1]-self.times2[t]))
+
+        print(dtimes)
+        print(dtimes2)
 
     @kernel
     def initialize_devs(self):
@@ -114,7 +135,7 @@ class PID_controller(EnvExperiment):
     def sample(self, values):
 
         # sampling voltages from Sampler and assigning them to 'voltages'
-        self.sampler0.sample_mu(values)
+        self.sampler0.sample(values)
 
     @kernel
     def setup_zotino (self):
