@@ -77,18 +77,19 @@ class PID_controller(EnvExperiment):
 
         
         # while loop in which all the control is done
-        while True:
-            self.sample(values)     # sampling voltages from the PFD - it needs more or less 230 us
-            error_sig = float(values[0])
-            delay(200*us)           # delay is needed for sampler to perform its job
-            with parallel:
-                prop_out = self.proportional_multiply (error_sig, self.Kp)
-                integral_in, integrated_out = self.integral_part (error_sig, integral_in, self.Ki)
-                last_error, derivative_out = self.derivative_part (error_sig, last_error, self.Kd)
-            # calculations above take approximately 40 us
-            sum = prop_out + integrated_out + derivative_out    # it takes around 0.5 us
-            self.write_output(self.DAC_channel, int(sum)+32768)
-
+        # while True:
+        self.sample(values)     # sampling voltages from the PFD - it needs more or less 230 us
+        error_sig = float(values[0])
+        delay(200*us)           # delay is needed for sampler to perform its job
+        with parallel:
+            prop_out = self.proportional_multiply (error_sig, self.Kp)
+            integral_in, integrated_out = self.integral_part (error_sig, integral_in, self.Ki)
+            last_error, derivative_out = self.derivative_part (error_sig, last_error, self.Kd)
+        # calculations above take approximately 40 us
+        sum = prop_out + integrated_out + derivative_out    # it takes around 0.5 us
+        self.write_output(self.DAC_channel, int(sum)+32768) # it takes around 30 us
+    
+    # summary: 230+40 + 30 = 300 us; 3300 Hz bandwidth
 
     # def analyze(self):
     #     print(voltage_to_mu(9.99))
